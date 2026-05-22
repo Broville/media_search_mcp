@@ -1,0 +1,52 @@
+{
+  "name": "@broville/media-search-mcp",
+  "version": "1.0.0",
+  "description": "MCP server for movie and TV show search via TMDB and TheTVDB",
+  "main": "dist/index.js",
+  "type": "module",
+  "bin": {
+    "media-search-mcp": "dist/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "start": "node dist/index.js",
+    "prepare": "npm run build",
+    "lint": "eslint src --ext .ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "tmdb",
+    "tvdb",
+    "movies",
+    "tv-shows",
+    "search"
+  ],
+  "author": "Broville <neo@eaglepass.io>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Broville/media_search_mcp.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Broville/media_search_mcp/issues"
+  },
+  "homepage": "https://github.com/Broville/media_search_mcp#readme",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.41",
+    "typescript": "^5.3.0"
+  }
+}
