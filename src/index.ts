@@ -6,273 +6,286 @@ import {
   ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
 
-import { discoverRadarr, type RadarrMovieLookupResult } from './radarr.js';
-import { discoverSonarr, type SonarrLookupResult } from './sonarr.js';
-import { TvMazeClient } from './tvmaze.js';
+import { TmdbClient } from './tmdb.js';
 
-let radarr = await discoverRadarr();
-let sonarr = await discoverSonarr();
-const tvmaze = new TvMazeClient();
+/* ─── Config ─── */
 
-console.error([
-  'Media Search MCP v2.0.0',
-  `  Radarr: ${radarr ? 'connected' : 'not found (set RADARR_URL + RADARR_API_KEY or run on localhost:7878)' }`,
-  `  Sonarr: ${sonarr ? 'connected' : 'not found (set SONARR_URL + SONARR_API_KEY or run on localhost:8989)' }`,
-  `  TVmaze: always available (keyless fallback)`,
-].join('\n'));
-
-// ─── Helpers ───
-
-function pickPoster(images?: Array<{ coverType: string; url?: string; remoteUrl?: string }>): string | undefined {
-  return images?.find(i => i.coverType === 'poster')?.url
-    ?? images?.find(i => i.coverType === 'poster')?.remoteUrl;
-}
-function pickFanart(images?: Array<{ coverType: string; url?: string; remoteUrl?: string }>): string | undefined {
-  return images?.find(i => i.coverType === 'fanart')?.url
-    ?? images?.find(i => i.coverType === 'fanart')?.remoteUrl;
+function getApiKey(): string {
+  if (process.env.TMDB_API_KEY) return process.env.TMDB_API_KEY;
+  try {
+    const { execSync } = require('child_process');
+    const out = execSync('op item get "TMDB API Key" --vault Server --field api-key 2>/dev/null');
+    return out.toString().trim();
+  } catch {
+    throw new Error('TMDB_API_KEY not set and 1Password TMDB API Key not found.');
+  }
 }
 
-function fromRadarr(r: RadarrMovieLookupResult[]) {
-  return r.map(x => ({
-    id: x.tmdbId,
-    title: x.title,
-    year: x.year,
-    overview: x.overview,
-    poster_url: pickPoster(x.images),
-    backdrop_url: pickFanart(x.images),
-    rating: x.ratings?.value,
-    certification: x.certification,
-    imdb_id: x.imdbId,
-    studio: x.studio,
-    runtime: x.runtime,
-    genres: x.genres,
-    in_cinemas: x.inCinemas,
-    trailer_id: x.youTubeTrailerId,
-    website: x.website,
-    source: 'radarr',
-  }));
+const client = new TmdbClient(getApiKey());
+
+/* ─── Helpers ─── */
+
+function clean(obj: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(obj).filter(([, v]) => v !== undefined && v !== null));
 }
 
-function fromSonarr(r: SonarrLookupResult[]) {
-  return r.map(x => ({
-    id: x.tvdbId,
-    title: x.title,
-    sort_title: x.sortTitle,
-    year: x.year,
-    overview: x.overview,
-    poster_url: pickPoster(x.images),
-    backdrop_url: pickFanart(x.images),
-    rating: x.ratings?.value,
-    certification: x.certification,
-    status: x.status,
-    imdb_id: x.imdbId,
-    network: x.network,
-    runtime: x.runtime,
-    genres: x.genres,
-    season_count: x.seasonCount,
-    episode_count: x.totalEpisodeCount ?? x.episodeCount,
-    first_aired: x.firstAired,
-    last_aired: x.lastAired,
-    source: 'sonarr',
-  }));
-}
+/* ─── Tool definitions ─── */
 
-function fromTvMaze(r: Awaited<ReturnType<typeof tvmaze.search>>) {
-  return r.map(x => ({
-    id: x.show.id,
-    title: x.show.name,
-    year: x.show.premiered ? Number(x.show.premiered.split('-')[0]) : undefined,
-    overview: x.show.summary,
-    poster_url: x.show.image?.medium,
-    backdrop_url: x.show.image?.original,
-    rating: x.show.rating?.average,
-    status: x.show.status,
-    network: x.show.network?.name ?? x.show.webChannel?.name,
-    genres: x.show.genres,
-    runtime: x.show.runtime,
-    premiered: x.show.premiered,
-    ended: x.show.ended,
-    imdb_id: x.show.externals?.imdb,
-    tvmaze_id: x.show.id,
-    source: 'tvmaze',
-  }));
-}
-
-// ─── Tools ───
-
-const MEDIA_SEARCH_TOOL = {
-  name: 'media_search',
-  description: 'Search movies and TV shows. Uses Radarr/Sonarr when connected, otherwise falls back to keyless TVmaze.',
-  inputSchema: {
-    type: 'object' as const,
-    properties: {
-      query: { type: 'string', description: 'Search text' },
-      limit: { type: 'number', description: 'Max results per source', default: 10 },
-    },
-    required: ['query'],
-  },
-};
-
-const MEDIA_SEARCH_MOVIES_TOOL = {
-  name: 'media_search_movies',
-  description: 'Search movies via Radarr. Falls back to error if Radarr is not connected.',
-  inputSchema: {
-    type: 'object' as const,
-    properties: {
-      query: { type: 'string', description: 'Search text' },
-    },
-    required: ['query'],
-  },
-};
-
-const MEDIA_SEARCH_TV_TOOL = {
-  name: 'media_search_tv',
-  description: 'Search TV shows via Sonarr (preferred) or TVmaze (keyless fallback).',
-  inputSchema: {
-    type: 'object' as const,
-    properties: {
-      query: { type: 'string', description: 'Search text' },
-    },
-    required: ['query'],
-  },
-};
-
-const MEDIA_MOVIE_DETAILS_TOOL = {
-  name: 'media_movie_details',
-  description: 'Get full movie details from Radarr by TMDB or IMDb ID.',
-  inputSchema: {
-    type: 'object' as const,
-    properties: {
-      tmdb_id: { type: 'number', description: 'TMDB movie ID' },
-      imdb_id: { type: 'string', description: 'IMDb ID (e.g. tt1375666)' },
+const TOOLS = [
+  {
+    name: 'media_search',
+    description: 'Search movies, TV shows, and people on TMDB (multi-search).',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        query: { type: 'string' },
+        include_adult: { type: 'boolean', default: false },
+        language: { type: 'string', default: 'en-US' },
+        page: { type: 'number', default: 1 },
+      },
+      required: ['query'],
     },
   },
-};
-
-const MEDIA_TV_DETAILS_TOOL = {
-  name: 'media_tv_details',
-  description: 'Get full TV series details from Sonarr by TVDB ID.',
-  inputSchema: {
-    type: 'object' as const,
-    properties: {
-      tvdb_id: { type: 'number', description: 'TVDB series ID' },
-    },
-    required: ['tvdb_id'],
-  },
-};
-
-const MEDIA_TV_EPISODES_TOOL = {
-  name: 'media_tv_episodes',
-  description: 'Get episodes for a TV show via Sonarr or TVmaze.',
-  inputSchema: {
-    type: 'object' as const,
-    properties: {
-      tvdb_id: { type: 'number', description: 'TVDB series ID (Sonarr)' },
-      tvmaze_id: { type: 'number', description: 'TVmaze show ID (fallback)' },
+  {
+    name: 'media_search_movies',
+    description: 'Search movies on TMDB.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        query: { type: 'string' },
+        year: { type: 'number' },
+        primary_release_year: { type: 'number' },
+        language: { type: 'string', default: 'en-US' },
+        page: { type: 'number', default: 1 },
+      },
+      required: ['query'],
     },
   },
-};
-
-const ALL_TOOLS = [
-  MEDIA_SEARCH_TOOL,
-  MEDIA_SEARCH_MOVIES_TOOL,
-  MEDIA_SEARCH_TV_TOOL,
-  MEDIA_MOVIE_DETAILS_TOOL,
-  MEDIA_TV_DETAILS_TOOL,
-  MEDIA_TV_EPISODES_TOOL,
+  {
+    name: 'media_search_tv',
+    description: 'Search TV shows on TMDB.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        query: { type: 'string' },
+        first_air_date_year: { type: 'number' },
+        language: { type: 'string', default: 'en-US' },
+        page: { type: 'number', default: 1 },
+      },
+      required: ['query'],
+    },
+  },
+  {
+    name: 'media_movie_details',
+    description: 'Get full TMDB movie details by ID. Use append_to_response for credits, videos, recommendations, similar, images, external_ids, keywords, release_dates.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        movie_id: { type: 'number' },
+        append: { type: 'string', description: 'e.g. credits,videos,recommendations' },
+        language: { type: 'string', default: 'en-US' },
+      },
+      required: ['movie_id'],
+    },
+  },
+  {
+    name: 'media_tv_details',
+    description: 'Get full TMDB TV series details by ID. Use append_to_response for credits, videos, recommendations, similar, images, external_ids, keywords.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        series_id: { type: 'number' },
+        append: { type: 'string', description: 'e.g. credits,videos' },
+        language: { type: 'string', default: 'en-US' },
+      },
+      required: ['series_id'],
+    },
+  },
+  {
+    name: 'media_tv_season',
+    description: 'Get TMDB season details with episodes.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        series_id: { type: 'number' },
+        season_number: { type: 'number' },
+        language: { type: 'string', default: 'en-US' },
+      },
+      required: ['series_id', 'season_number'],
+    },
+  },
+  {
+    name: 'media_tv_episode',
+    description: 'Get TMDB single episode details.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        series_id: { type: 'number' },
+        season_number: { type: 'number' },
+        episode_number: { type: 'number' },
+        language: { type: 'string', default: 'en-US' },
+      },
+      required: ['series_id', 'season_number', 'episode_number'],
+    },
+  },
+  {
+    name: 'media_trending',
+    description: 'Get trending movies or TV.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        media_type: { type: 'string', enum: ['all', 'movie', 'tv'], default: 'all' },
+        time_window: { type: 'string', enum: ['day', 'week'], default: 'week' },
+        language: { type: 'string', default: 'en-US' },
+      },
+      required: ['media_type', 'time_window'],
+    },
+  },
+  {
+    name: 'media_genres',
+    description: 'Get TMDB genre list.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        type: { type: 'string', enum: ['movie', 'tv'] },
+        language: { type: 'string', default: 'en' },
+      },
+      required: ['type'],
+    },
+  },
+  {
+    name: 'media_languages',
+    description: 'Get TMDB supported languages.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {},
+    },
+  },
 ];
 
-// ─── Server ───
+/* ─── Server ─── */
 
 const server = new Server(
-  { name: 'media-search-mcp', version: '2.0.0' },
+  { name: 'media-search-mcp', version: '3.0.0' },
   { capabilities: { tools: {} } }
 );
 
-server.setRequestHandler(ListToolsRequestSchema, async () => ({
-  tools: ALL_TOOLS,
-}));
+function pickTitle(r: { title?: string; name?: string }): string | undefined {
+  return r.title ?? r.name;
+}
 
-server.setRequestHandler(CallToolRequestSchema, async (request) => {
-  const { name, arguments: args } = request.params;
+function flattenMulti(raw: unknown): Record<string, unknown> {
+  const r = raw as Record<string, unknown>;
+  return clean({
+    id: r.id,
+    media_type: r.media_type,
+    title: pickTitle(r),
+    year: (r.release_date as string | undefined)?.slice(0, 4)
+       ?? (r.first_air_date as string | undefined)?.slice(0, 4),
+    overview: r.overview,
+    poster_url: TmdbClient.img(r.poster_path as string | null | undefined, 'w500'),
+    backdrop_url: TmdbClient.img(r.backdrop_path as string | null | undefined, 'w780'),
+    profile_url: TmdbClient.img(r.profile_path as string | null | undefined, 'w500'),
+    genre_ids: r.genre_ids,
+    popularity: r.popularity,
+    vote_average: r.vote_average,
+    vote_count: r.vote_count,
+    original_language: r.original_language,
+    release_date: r.release_date,
+    first_air_date: r.first_air_date,
+    origin_country: r.origin_country,
+    known_for_department: r.known_for_department,
+  });
+}
+
+server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: TOOLS }));
+
+server.setRequestHandler(CallToolRequestSchema, async (req) => {
+  const { name, arguments: args } = req.params;
 
   try {
     let result: unknown;
 
     switch (name) {
       case 'media_search': {
-        const a = args as { query: string };
-        const results: unknown[] = [];
-        if (radarr) {
-          results.push(...fromRadarr(await radarr.lookup(a.query)).map(x => ({ ...x, media_type: 'movie' })));
-        }
-        if (sonarr) {
-          results.push(...fromSonarr(await sonarr.lookup(a.query)).map(x => ({ ...x, media_type: 'tv' })));
-        }
-        if (results.length === 0) {
-          results.push(...fromTvMaze(await tvmaze.search(a.query)).map(x => ({ ...x, media_type: 'tv' })));
-        }
-        result = results;
+        const a = args as { query: string; include_adult?: boolean; language?: string; page?: number };
+        const raw = await client.searchMulti(a.query, a.include_adult, a.language, a.page ?? 1);
+        result = { page: raw.page, total_pages: raw.total_pages, total_results: raw.total_results, results: raw.results.map(flattenMulti) };
         break;
       }
-
       case 'media_search_movies': {
-        const a = args as { query: string };
-        if (radarr) {
-          result = fromRadarr(await radarr.lookup(a.query));
-        } else {
-          result = { error: 'Radarr not connected. Set RADARR_URL + RADARR_API_KEY, or run Radarr on localhost:7878.' };
-        }
+        const a = args as { query: string; year?: number; primary_release_year?: number; language?: string; page?: number };
+        const raw = await client.searchMovies(a.query, a.year, a.primary_release_year, a.language, a.page ?? 1);
+        result = { page: raw.page, total_pages: raw.total_pages, total_results: raw.total_results, results: raw.results.map(flattenMulti) };
         break;
       }
-
       case 'media_search_tv': {
-        const a = args as { query: string };
-        if (sonarr) {
-          result = fromSonarr(await sonarr.lookup(a.query));
-        } else {
-          result = fromTvMaze(await tvmaze.search(a.query));
-        }
+        const a = args as { query: string; first_air_date_year?: number; language?: string; page?: number };
+        const raw = await client.searchTv(a.query, a.first_air_date_year, a.language, a.page ?? 1);
+        result = { page: raw.page, total_pages: raw.total_pages, total_results: raw.total_results, results: raw.results.map(flattenMulti) };
         break;
       }
-
       case 'media_movie_details': {
-        const a = args as { tmdb_id?: number; imdb_id?: string };
-        if (!radarr) {
-          result = { error: 'Radarr not connected. Set RADARR_URL + RADARR_API_KEY.' };
-        } else if (a.tmdb_id) {
-          result = fromRadarr([await radarr.lookupByTmdbId(a.tmdb_id)])[0];
-        } else if (a.imdb_id) {
-          result = fromRadarr([await radarr.lookupByImdbId(a.imdb_id)])[0];
-        } else {
-          result = { error: 'Provide tmdb_id or imdb_id.' };
-        }
+        const a = args as { movie_id: number; append?: string; language?: string };
+        const detail = await client.movieDetails(a.movie_id, a.append, a.language);
+        result = clean({
+          ...detail,
+          poster_url: TmdbClient.img(detail.poster_path, 'w500'),
+          backdrop_url: TmdbClient.img(detail.backdrop_path, 'w780'),
+        });
         break;
       }
-
       case 'media_tv_details': {
-        const a = args as { tvdb_id: number };
-        if (!sonarr) {
-          result = { error: 'Sonarr not connected. Set SONARR_URL + SONARR_API_KEY.' };
-        } else {
-          const sr = await sonarr.getSeries(a.tvdb_id);
-          result = sr ? fromSonarr([sr])[0] : { error: `Series with TVDB ID ${a.tvdb_id} not found in Sonarr.`, tvdb_id: a.tvdb_id };
-        }
+        const a = args as { series_id: number; append?: string; language?: string };
+        const detail = await client.tvDetails(a.series_id, a.append, a.language);
+        result = clean({
+          ...detail,
+          poster_url: TmdbClient.img(detail.poster_path, 'w500'),
+          backdrop_url: TmdbClient.img(detail.backdrop_path, 'w780'),
+          seasons: detail.seasons?.map(s => ({
+            ...s,
+            poster_url: TmdbClient.img(s.poster_path, 'w342'),
+          })),
+        });
         break;
       }
-
-      case 'media_tv_episodes': {
-        const a = args as { tvdb_id?: number; tvmaze_id?: number };
-        if (sonarr && a.tvdb_id) {
-          result = await sonarr.getSeries(a.tvdb_id);
-        } else if (a.tvmaze_id) {
-          result = await tvmaze.getEpisodes(a.tvmaze_id);
-        } else {
-          result = { error: 'Provide tvdb_id (with Sonarr) or tvmaze_id (fallback).' };
-        }
+      case 'media_tv_season': {
+        const a = args as { series_id: number; season_number: number; language?: string };
+        const detail = await client.tvSeason(a.series_id, a.season_number, a.language);
+        result = clean({
+          ...detail,
+          poster_url: TmdbClient.img(detail.poster_path, 'w342'),
+          episodes: detail.episodes?.map(e => ({
+            ...e,
+            still_url: TmdbClient.img(e.still_path, 'w300'),
+          })),
+        });
         break;
       }
-
+      case 'media_tv_episode': {
+        const a = args as { series_id: number; season_number: number; episode_number: number; language?: string };
+        const detail = await client.tvEpisode(a.series_id, a.season_number, a.episode_number, a.language);
+        result = clean({
+          ...detail,
+          still_url: TmdbClient.img(detail.still_path, 'w300'),
+        });
+        break;
+      }
+      case 'media_trending': {
+        const a = args as { media_type: string; time_window: string; language?: string };
+        const raw = await client.trending(a.media_type as 'all' | 'movie' | 'tv', a.time_window as 'day' | 'week', a.language ?? 'en-US');
+        result = { page: raw.page, total_pages: raw.total_pages, total_results: raw.total_results, results: raw.results.map(flattenMulti) };
+        break;
+      }
+      case 'media_genres': {
+        const a = args as { type: 'movie' | 'tv'; language?: string };
+        result = await client.genres(a.type, a.language ?? 'en');
+        break;
+      }
+      case 'media_languages': {
+        result = await client.languages();
+        break;
+      }
       default:
         throw new Error(`Unknown tool: ${name}`);
     }
@@ -292,7 +305,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error('Media Search MCP v2.0.0 ready on stdio');
+  console.error('Media Search MCP v3.0.0 (TMDB) ready');
 }
 
 main().catch((err: unknown) => {
