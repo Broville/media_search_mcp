@@ -1,13 +1,12 @@
 {
   "name": "@broville/media-search-mcp",
-  "version": "1.0.0",
-  "description": "MCP server for movie and TV show search via TMDB and TheTVDB",
+  "version": "2.0.0",
+  "description": "MCP server for movie and TV show search via Radarr / Sonarr / TVmaze — zero TMDB/TVDB keys required",
   "main": "dist/index.js",
   "type": "module",
   "bin": "dist/index.js",
   "files": [
     "dist",
-    "src",
     "README.md",
     "LICENSE"
   ],
@@ -21,11 +20,13 @@
   "keywords": [
     "mcp",
     "model-context-protocol",
-    "tmdb",
-    "tvdb",
+    "radarr",
+    "sonarr",
+    "tvmaze",
     "movies",
     "tv-shows",
-    "search"
+    "search",
+    "keyless"
   ],
   "author": "Broville <neo@eaglepass.io>",
   "license": "MIT",
