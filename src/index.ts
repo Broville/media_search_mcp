@@ -166,7 +166,7 @@ const TOOLS = [
 /* ─── Server ─── */
 
 const server = new Server(
-  { name: 'media-search-mcp', version: '3.0.0' },
+  { name: 'media-search-mcp', version: '1.0.2' },
   { capabilities: { tools: {} } }
 );
 

@@ -30,13 +30,26 @@ npx @broville/media-search-mcp
 
 ## Usage
 
-Requires a **TMDB API key**:
-
-1. Get a free key: https://www.themoviedb.org/settings/api
-2. Export as env var:
+### Option A — Set env var directly
 
 ```bash
 export TMDB_API_KEY=your_tmdb_key
+npx @broville/media-search-mcp
+```
+
+### Option B — 1Password auto-fetch (recommended)
+
+If you're signed into the 1Password CLI (`op`), the server **automatically** fetches the key from your `Server` vault — no env var needed:
+
+```bash
+npx @broville/media-search-mcp
+```
+
+It runs `op item get "TMDB API Key" --vault Server --field api-key` at startup.
+
+### Option C — 1Password with env var
+
+```bash
 export TMDB_API_KEY=$(op item get "TMDB API Key" --vault Server --field api-key)
 npx @broville/media-search-mcp
 ```
@@ -48,10 +61,22 @@ Add to `~/.hermes/profiles/neo/config.yaml`:
 ```yaml
 mcp:
   media-search:
+    command: npx
+    args: ["-y", "@broville/media-search-mcp"]
+    env:
+      # Option A: hardcode key
+      TMDB_API_KEY: "your_tmdb_key"
+      # ... or omit env entirely and rely on 1Password auto-fetch
+```
+
+Or with a local install:
+```yaml
+mcp:
+  media-search:
     command: node
     args: ["/home/echo/.npm-global/lib/node_modules/@broville/media-search-mcp/dist/index.js"]
     env:
-      TMDB_API_KEY: "${TMDB_API_KEY}"
+      TMDB_API_KEY: "your_tmdb_key"
 ```
 
 ## Response format
