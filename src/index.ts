@@ -5,6 +5,7 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
+import { execSync } from 'child_process';
 
 import { TmdbClient } from './tmdb.js';
 
@@ -13,7 +14,6 @@ import { TmdbClient } from './tmdb.js';
 function getApiKey(): string {
   if (process.env.TMDB_API_KEY) return process.env.TMDB_API_KEY;
   try {
-    const { execSync } = require('child_process');
     const out = execSync('op item get "TMDB API Key" --vault Server --field api-key 2>/dev/null');
     return out.toString().trim();
   } catch {
@@ -166,7 +166,7 @@ const TOOLS = [
 /* ─── Server ─── */
 
 const server = new Server(
-  { name: 'media-search-mcp', version: '1.0.2' },
+  { name: 'media-search-mcp', version: '1.0.4' },
   { capabilities: { tools: {} } }
 );
 
@@ -305,7 +305,7 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
 async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error('Media Search MCP v3.0.0 (TMDB) ready');
+    console.error('Media Search MCP v1.0.4 (TMDB) ready');
 }
 
 main().catch((err: unknown) => {
