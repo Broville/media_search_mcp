@@ -6,3 +6,8 @@ dist/
 .DS_Store
 *.tsbuildinfo
 coverage/
+
+# Build outputs — must NOT be committed (npx builds on install)
+dist/
+dist/**/node_modules
+*.tsbuildinfo
