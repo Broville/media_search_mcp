@@ -1,13 +1,7 @@
 node_modules/
-dist/
 *.log
 .env
 .env.local
 .DS_Store
 *.tsbuildinfo
 coverage/
-
-# Build outputs — must NOT be committed (npx builds on install)
-dist/
-dist/**/node_modules
-*.tsbuildinfo
