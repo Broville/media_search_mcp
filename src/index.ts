@@ -166,7 +166,7 @@ const TOOLS = [
 /* ─── Server ─── */
 
 const server = new Server(
-  { name: 'media-search-mcp', version: '1.0.4' },
+  { name: 'media-search-mcp', version: '1.1.0' },
   { capabilities: { tools: {} } }
 );
 
@@ -305,7 +305,7 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
 async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
-    console.error('Media Search MCP v1.0.4 (TMDB) ready');
+    console.error('Media Search MCP v1.1.0 (TMDB) ready');
 }
 
 main().catch((err: unknown) => {
